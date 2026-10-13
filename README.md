@@ -78,6 +78,22 @@ Cycle de vie d'une commande : `PENDING → PAID → SHIPPED → DELIVERED`. Une 
 Importer `postman/boutique-en-ligne.postman_collection.json` dans Postman, lancer l'API, puis faire **Run collection** dans l'ordre (base fraîche).
 En ligne de commande : `npx newman run postman/boutique-en-ligne.postman_collection.json`
 
+## 🛠️ DevOps, Intégration Continue & Qualité
+
+Le projet intègre un ensemble d'outils et de configurations pour **GitHub** et **Azure DevOps** :
+
+- **Plan d'action global :** [PLAN_ACTION.md](PLAN_ACTION.md)
+- **Work Items & User Stories :** [WORK_ITEMS.md](WORK_ITEMS.md) et fichier importable [azure-devops-work-items.csv](azure-devops-work-items.csv)
+- **Modèles de Pull Request :**
+  - GitHub : [.github/pull_request_template.md](.github/pull_request_template.md)
+  - Azure DevOps : [.azuredevops/pull_request_template.md](.azuredevops/pull_request_template.md)
+- **Pipelines CI/CD & Gates Qualité :**
+  - Azure DevOps : [azure-pipelines.yml](azure-pipelines.yml) (Stages CI, JaCoCo check $\ge 80\%$, Docker build/push, Staging & Prod)
+  - GitHub Actions : [.github/workflows/ci-cd.yml](.github/workflows/ci-cd.yml)
+- **Guide des Politiques de Branches :** [BRANCH_POLICIES.md](BRANCH_POLICIES.md)
+- **Conteneurisation :** [Dockerfile](Dockerfile) multi-stage avec image Eclipse Temurin 17 JRE non-root.
+
+
 ## Reste à faire
 
 - [ ] Réécrire les tests d'intégration avec authentification JWT.
