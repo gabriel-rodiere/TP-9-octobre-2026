@@ -41,6 +41,9 @@ public class CategoryService {
 
     public CategoryResponse update(Long id, CategoryRequest request) {
         Category category = getEntity(id);
+        if (repository.existsByNameIgnoreCaseAndIdNot(request.name(), id)) {
+            throw new BusinessException("Une categorie nommee '" + request.name() + "' existe deja");
+        }
         mapper.update(category, request);
         return mapper.toResponse(category);
     }

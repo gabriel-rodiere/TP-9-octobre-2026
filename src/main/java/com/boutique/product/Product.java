@@ -52,6 +52,9 @@ public class Product {
     }
 
     public void decreaseStock(int quantity) {
+        if (quantity <= 0) {
+            throw new BusinessException("La quantite doit etre strictement positive");
+        }
         if (quantity > stock) {
             throw new BusinessException("Stock insuffisant pour le produit '" + name
                     + "' (disponible : " + stock + ", demandé : " + quantity + ")");
@@ -60,6 +63,9 @@ public class Product {
     }
 
     public void increaseStock(int quantity) {
+        if (quantity <= 0) {
+            throw new BusinessException("La quantite doit etre strictement positive");
+        }
         stock += quantity;
     }
 
