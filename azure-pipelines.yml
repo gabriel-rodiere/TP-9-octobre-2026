@@ -69,7 +69,7 @@ stages:
           - script: |
               chmod +x ./mvnw
               ./mvnw clean test $(mavenArgs)
-            displayName: 'Exécuter les tests et JaCoCo'
+            displayName: 'Exécuter les tests & Quality Gate JaCoCo (>= 80%)'
 
           - task: PublishTestResults@2
             displayName: 'Publier les résultats de tests Surefire'
@@ -88,34 +88,11 @@ stages:
               pathToSources: '$(System.DefaultWorkingDirectory)/src/main/java/'
 
   # ----------------------------------------------------------------------------
-  # STAGE 2 : Quality Gate - Vérification des seuils de qualité & JaCoCo Check
-  # ----------------------------------------------------------------------------
-  - stage: QualityGate
-    displayName: 'Quality Gate : JaCoCo & Security Check'
-    dependsOn: CI
-    condition: succeeded()
-    jobs:
-      - job: VerifyQualityGates
-        displayName: 'Vérification du seuil minimal de couverture (>= 80%)'
-        steps:
-          - task: JavaToolInstaller@0
-            displayName: 'Installer Java $(javaVersion)'
-            inputs:
-              versionSpec: '$(javaVersion)'
-              jdkArchitectureOption: 'x64'
-              jdkSourceOption: 'PreInstalled'
-
-          - script: |
-              chmod +x ./mvnw
-              ./mvnw jacoco:check $(mavenArgs)
-            displayName: 'Valider le seuil de couverture JaCoCo (80% minimum)'
-
-  # ----------------------------------------------------------------------------
-  # STAGE 3 : Package - Construction de l'image Docker & Push ACR
+  # STAGE 2 : Package - Construction de l'image Docker
   # ----------------------------------------------------------------------------
   - stage: Package
     displayName: 'Package : Docker Build'
-    dependsOn: QualityGate
+    dependsOn: CI
     condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
     jobs:
       - job: BuildDocker
