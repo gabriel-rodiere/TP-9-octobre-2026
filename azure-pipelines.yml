@@ -114,34 +114,28 @@ stages:
   # STAGE 3 : Package - Construction de l'image Docker & Push ACR
   # ----------------------------------------------------------------------------
   - stage: Package
-    displayName: 'Package : Docker Build & Push'
+    displayName: 'Package : Docker Build'
     dependsOn: QualityGate
     condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
     jobs:
-      - job: BuildAndPushDocker
-        displayName: 'Build & Push Docker Image'
+      - job: BuildDocker
+        displayName: 'Build Docker Image (Local)'
         steps:
-          - task: Docker@2
-            displayName: 'Build et push image Docker vers Azure Container Registry'
-            inputs:
-              command: buildAndPush
-              repository: $(imageRepository)
-              dockerfile: $(dockerfilePath)
-              containerRegistry: $(dockerRegistryServiceConnection)
-              tags: |
-                $(tag)
-                latest
+          - script: |
+              docker build -t $(imageRepository):$(tag) -t $(imageRepository):latest -f $(dockerfilePath) .
+            displayName: 'Build de l’image Docker'
 
           - publish: $(Build.SourcesDirectory)/postman
             artifact: postman-tests
             displayName: 'Publier la collection Postman pour les tests E2E'
 
   # ----------------------------------------------------------------------------
-  # STAGE 4 : Deploy Dev - Déploiement Staging & Smoke Tests Newman
+  # STAGE 4 : Deploy Dev - Déploiement Staging & Smoke Tests Newman (Désactivé si pas d'infra)
   # ----------------------------------------------------------------------------
   - stage: DeployDev
     displayName: 'CD : Déploiement Environnement Dev'
     dependsOn: Package
+    condition: false # Activer dès que l'infrastructure Azure est provisionnée
     jobs:
       - deployment: DeployToDev
         displayName: 'Déploiement Azure Container App (Dev)'
@@ -166,11 +160,12 @@ stages:
                   displayName: 'Exécuter les Smoke Tests Postman'
 
   # ----------------------------------------------------------------------------
-  # STAGE 5 : Deploy Prod - Déploiement Production avec Approbation
+  # STAGE 5 : Deploy Prod - Déploiement Production avec Approbation (Désactivé si pas d'infra)
   # ----------------------------------------------------------------------------
   - stage: DeployProd
     displayName: 'CD : Déploiement Production'
     dependsOn: DeployDev
+    condition: false # Activer dès que l'infrastructure Azure est provisionnée
     jobs:
       - deployment: DeployToProd
         displayName: 'Déploiement Azure Container App (Production)'
