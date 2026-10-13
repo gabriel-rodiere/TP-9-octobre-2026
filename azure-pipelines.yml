@@ -26,6 +26,12 @@ variables:
     value: '17'
   - name: mavenArgs
     value: '-B -ntp'
+  - name: sonarCloudServiceConnection
+    value: 'SonarCloud'
+  - name: sonarOrganization
+    value: 'mon-organisation-sonar'
+  - name: sonarProjectKey
+    value: 'mon-organisation-sonar_boutique-en-ligne'
   - name: dockerRegistryServiceConnection
     value: 'acr-boutique-connection'
   - name: imageRepository
@@ -66,10 +72,32 @@ stages:
                 maven
               path: $(HOME)/.m2/repository
 
+          - task: SonarCloudPrepare@3
+            displayName: 'Préparer SonarCloud (Configuration & Scanner)'
+            inputs:
+              SonarCloud: '$(sonarCloudServiceConnection)'
+              organization: '$(sonarOrganization)'
+              scannerMode: 'Other'
+              extraProperties: |
+                sonar.projectKey=$(sonarProjectKey)
+                sonar.projectName=boutique-en-ligne
+                sonar.coverage.jacoco.xmlReportPaths=$(System.DefaultWorkingDirectory)/**/site/jacoco/jacoco.xml
+                sonar.java.binaries=**/target/classes
+
           - script: |
               chmod +x ./mvnw
-              ./mvnw clean test $(mavenArgs)
-            displayName: 'Exécuter les tests & Quality Gate JaCoCo (>= 80%)'
+              ./mvnw clean verify $(mavenArgs) sonar:sonar
+            displayName: 'Exécuter Maven verify, JaCoCo et Analyse SonarCloud'
+
+          - task: SonarCloudPublish@3
+            displayName: 'Publier les résultats de l’analyse SonarCloud'
+            inputs:
+              pollingTimeoutSec: '300'
+
+          - task: SonarCloudQualityGate@3
+            displayName: 'Quality Gate SonarCloud (Bloquant)'
+            inputs:
+              qualityGateTimeoutSec: '300'
 
           - task: PublishTestResults@2
             displayName: 'Publier les résultats de tests Surefire'
