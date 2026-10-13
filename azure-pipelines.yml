@@ -1,0 +1,184 @@
+# ==============================================================================
+# Pipeline Azure DevOps – Projet Fil Rouge (Boutique en ligne)
+# Stages : CI (Build & Tests) -> Quality Gates (JaCoCo) -> Package (Docker) -> Deploy Dev -> Deploy Prod
+# ==============================================================================
+
+name: $(Date:yyyyMMdd)$(Rev:.r)
+
+trigger:
+  branches:
+    include:
+      - main
+      - develop
+  paths:
+    exclude:
+      - '**.md'
+      - '.github/**'
+
+pr:
+  branches:
+    include:
+      - main
+      - develop
+
+variables:
+  - name: javaVersion
+    value: '17'
+  - name: mavenArgs
+    value: '-B -ntp'
+  - name: dockerRegistryServiceConnection
+    value: 'acr-boutique-connection'
+  - name: imageRepository
+    value: 'boutique-en-ligne'
+  - name: containerRegistry
+    value: 'crboutiquefilrouge.azurecr.io'
+  - name: dockerfilePath
+    value: '$(Build.SourcesDirectory)/Dockerfile'
+  - name: tag
+    value: '$(Build.BuildId)'
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+  # ----------------------------------------------------------------------------
+  # STAGE 1 : CI - Compilation, Tests et Génération des Rapports
+  # ----------------------------------------------------------------------------
+  - stage: CI
+    displayName: 'CI : Build & Test'
+    jobs:
+      - job: BuildAndTest
+        displayName: 'Maven Build & Surefire Tests'
+        steps:
+          - task: JavaToolInstaller@0
+            displayName: 'Installer Java $(javaVersion)'
+            inputs:
+              versionSpec: '$(javaVersion)'
+              jdkArchitectureOption: 'x64'
+              jdkSourceOption: 'PreInstalled'
+
+          - task: Cache@2
+            displayName: 'Cache des dépendances Maven'
+            inputs:
+              key: 'maven | "$(Agent.OS)" | **/pom.xml'
+              restoreKeys: |
+                maven | "$(Agent.OS)"
+                maven
+              path: $(HOME)/.m2/repository
+
+          - script: |
+              chmod +x ./mvnw
+              ./mvnw clean test $(mavenArgs)
+            displayName: 'Exécuter les tests et JaCoCo'
+
+          - task: PublishTestResults@2
+            displayName: 'Publier les résultats de tests Surefire'
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: 'JUnit'
+              testResultsFiles: '**/surefire-reports/TEST-*.xml'
+              mergeTestResults: true
+              failTaskOnFailedTests: true
+
+          - task: PublishCodeCoverageResults@2
+            displayName: 'Publier le rapport de couverture JaCoCo'
+            condition: succeededOrFailed()
+            inputs:
+              summaryFileLocation: '$(System.DefaultWorkingDirectory)/**/site/jacoco/jacoco.xml'
+              pathToSources: '$(System.DefaultWorkingDirectory)/src/main/java/'
+
+  # ----------------------------------------------------------------------------
+  # STAGE 2 : Quality Gate - Vérification des seuils de qualité & JaCoCo Check
+  # ----------------------------------------------------------------------------
+  - stage: QualityGate
+    displayName: 'Quality Gate : JaCoCo & Security Check'
+    dependsOn: CI
+    condition: succeeded()
+    jobs:
+      - job: VerifyQualityGates
+        displayName: 'Vérification du seuil minimal de couverture (>= 80%)'
+        steps:
+          - task: JavaToolInstaller@0
+            displayName: 'Installer Java $(javaVersion)'
+            inputs:
+              versionSpec: '$(javaVersion)'
+              jdkArchitectureOption: 'x64'
+              jdkSourceOption: 'PreInstalled'
+
+          - script: |
+              chmod +x ./mvnw
+              ./mvnw jacoco:check $(mavenArgs)
+            displayName: 'Valider le seuil de couverture JaCoCo (80% minimum)'
+
+  # ----------------------------------------------------------------------------
+  # STAGE 3 : Package - Construction de l'image Docker & Push ACR
+  # ----------------------------------------------------------------------------
+  - stage: Package
+    displayName: 'Package : Docker Build & Push'
+    dependsOn: QualityGate
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - job: BuildAndPushDocker
+        displayName: 'Build & Push Docker Image'
+        steps:
+          - task: Docker@2
+            displayName: 'Build et push image Docker vers Azure Container Registry'
+            inputs:
+              command: buildAndPush
+              repository: $(imageRepository)
+              dockerfile: $(dockerfilePath)
+              containerRegistry: $(dockerRegistryServiceConnection)
+              tags: |
+                $(tag)
+                latest
+
+          - publish: $(Build.SourcesDirectory)/postman
+            artifact: postman-tests
+            displayName: 'Publier la collection Postman pour les tests E2E'
+
+  # ----------------------------------------------------------------------------
+  # STAGE 4 : Deploy Dev - Déploiement Staging & Smoke Tests Newman
+  # ----------------------------------------------------------------------------
+  - stage: DeployDev
+    displayName: 'CD : Déploiement Environnement Dev'
+    dependsOn: Package
+    jobs:
+      - deployment: DeployToDev
+        displayName: 'Déploiement Azure Container App (Dev)'
+        environment: 'filrouge-dev'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - script: |
+                    echo "Déploiement de l'image $(containerRegistry)/$(imageRepository):$(tag) sur l'environnement DEV..."
+                  displayName: 'Déployer conteneur Dev'
+
+                - task: Npm@1
+                  displayName: 'Installer Newman (Postman CLI)'
+                  inputs:
+                    command: 'custom'
+                    customCommand: 'install -g newman'
+
+                - script: |
+                    newman run $(Pipeline.Workspace)/postman-tests/boutique-en-ligne.postman_collection.json \
+                      --env-var "baseUrl=http://dev.boutique.internal:8080"
+                  displayName: 'Exécuter les Smoke Tests Postman'
+
+  # ----------------------------------------------------------------------------
+  # STAGE 5 : Deploy Prod - Déploiement Production avec Approbation
+  # ----------------------------------------------------------------------------
+  - stage: DeployProd
+    displayName: 'CD : Déploiement Production'
+    dependsOn: DeployDev
+    jobs:
+      - deployment: DeployToProd
+        displayName: 'Déploiement Azure Container App (Production)'
+        environment: 'filrouge-production'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - script: |
+                    echo "Déploiement en Production de $(containerRegistry)/$(imageRepository):$(tag)..."
+                  displayName: 'Déployer conteneur Production'
